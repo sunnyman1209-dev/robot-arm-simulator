@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>6축 교육용 로봇팔 시뮬레이터 · DWG-ARM6</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+    }
+}
+</script>
+<style>
+    :root{
+        --bp-navy: #071826;
+        --bp-navy-deep: #04101a;
+        --bp-panel: #0a2136;
+        --bp-line: #1f5c85;
+        --bp-line-dim: #113349;
+        --bp-cyan: #6fd3f2;
+        --bp-cyan-bright: #b7ecfc;
+        --bp-amber: #ffb703;
+        --bp-amber-dim: #8a6510;
+        --bp-white: #e9f5fb;
+        --bp-red: #ff6b6b;
+        --bp-probe-bright: #6bffa0;
+    }
+    *{ box-sizing: border-box; }
+    body{
+        margin:0; background: var(--bp-navy); color: var(--bp-white);
+        font-family: 'Noto Sans KR', sans-serif; overscroll-behavior: none;
+        overflow: hidden;
+    }
+    .font-display{ font-family:'Rajdhani','Noto Sans KR',sans-serif; letter-spacing: 0.04em; }
+    .font-mono{ font-family:'JetBrains Mono', monospace; }
+
+    /* 커스텀 스크롤바 (기본 흰색/회색 대신 블루프린트 톤으로) */
+    *{ scrollbar-width: thin; scrollbar-color: var(--bp-line) var(--bp-navy-deep); }
+    ::-webkit-scrollbar{ width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track{ background: var(--bp-navy-deep); }
+    ::-webkit-scrollbar-thumb{ background: var(--bp-line); border-radius: 4px; border: 1px solid var(--bp-navy-deep); }
+    ::-webkit-scrollbar-thumb:hover{ background: var(--bp-cyan); }
+    ::-webkit-scrollbar-corner{ background: var(--bp-navy-deep); }
+
+    /* 도면 배경 그리드 */
+    .blueprint-grid{
+        background-image:
+            repeating-linear-gradient(0deg, var(--bp-line-dim) 0 1px, transparent 1px 24px),
+            repeating-linear-gradient(90deg, var(--bp-line-dim) 0 1px, transparent 1px 24px);
+    }
+    .crop-mark{ position:absolute; width:14px; height:14px; border-color: var(--bp-cyan); opacity:0.6; pointer-events:none; }
+    .crop-tl{ top:6px; left:6px; border-top:2px solid; border-left:2px solid; }
+    .crop-tr{ top:6px; right:6px; border-top:2px solid; border-right:2px solid; }
+    .crop-bl{ bottom:6px; left:6px; border-bottom:2px solid; border-left:2px solid; }
+    .crop-br{ bottom:6px; right:6px; border-bottom:2px solid; border-right:2px solid; }
+
+    #app{ display:flex; flex-direction:column; height:100vh; }
+    #main{ display:flex; flex:1; min-height:0; flex-direction: row; }
+    @media (max-width: 860px){ #main{ flex-direction: column; } }
+
+    /* 상단 표제줄 */
+    #titlebar{
+        display:flex; align-items:center; justify-content:space-between;
+        padding: 8px 16px; background: var(--bp-navy-deep);
+        border-bottom: 1px solid var(--bp-line);
+    }
+    #titlebar .tb-cell{ padding: 0 14px; border-left: 1px solid var(--bp-line-dim); }
+    #titlebar .tb-cell:first-child{ border-left:none; }
+    #titlebar .tb-label{ font-size:9px; color:#5f93b3; letter-spacing:0.12em; }
+    #titlebar .tb-value{ font-size:12px; color: var(--bp-cyan-bright); }
+
+    /* 제어판 */
+    #control-panel{
+        width: 400px; flex-shrink:0; background: var(--bp-panel);
+        border-right: 1px solid var(--bp-line); overflow-y:auto;
+        padding: 14px 16px 28px; position:relative;
+    }
+    @media (max-width: 860px){ #control-panel{ width:100%; max-height:56vh; border-right:none; border-bottom:1px solid var(--bp-line); } }
+
+    .section-head{
+        display:flex; align-items:center; gap:8px; margin: 18px 0 8px;
+        font-size:12px; color: var(--bp-cyan); letter-spacing:0.14em;
+    }
+    .section-head::after{ content:''; flex:1; height:1px; background: var(--bp-line-dim); }
+    .section-head .idx{ font-family:'JetBrains Mono',monospace; color: var(--bp-amber); font-size:11px; }
+
+    /* 관절 게이지 카드 */
+    .gauge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .gauge-card{
+        background: var(--bp-navy-deep); border: 1px solid var(--bp-line-dim);
+        border-radius: 3px; padding: 5px 6px 6px; position:relative;
+    }
+    .gauge-card.active{ border-color: var(--bp-cyan); box-shadow: 0 0 0 1px var(--bp-cyan) inset; }
+    .gauge-card .g-title{ font-size:10px; color: var(--bp-cyan-bright); display:flex; justify-content:space-between; margin-bottom:1px; }
+    .gauge-card .g-sub{ font-size:8px; color:#5f93b3; margin-bottom:2px; }
+    .protractor{ display:block; margin: 0 auto; width:100%; height:auto; max-width:96px; }
+    .digital-readout{
+        font-family:'JetBrains Mono',monospace; text-align:center; font-size: 14px;
+        color: var(--bp-amber); text-shadow: 0 0 6px rgba(255,183,3,0.5);
+        margin-top: -4px;
+    }
+    .digital-readout span{ font-size:9px; color:#c98f18; }
+    input[type="range"].gauge-slider{
+        -webkit-appearance:none; width:100%; height: 12px; margin-top:3px;
+        background: repeating-linear-gradient(90deg, var(--bp-line) 0 1px, transparent 1px 8px), var(--bp-navy);
+        border: 1px solid var(--bp-line-dim); border-radius:2px;
+    }
+    input[type="range"].gauge-slider::-webkit-slider-thumb{
+        -webkit-appearance:none; width:7px; height:16px; margin-top:-2px;
+        background: var(--bp-amber); border:1px solid #7a5300; cursor:pointer;
+        clip-path: polygon(50% 0%, 100% 30%, 100% 100%, 0 100%, 0 30%);
+    }
+    input[type="range"].gauge-slider::-moz-range-thumb{
+        width:7px; height:16px; background: var(--bp-amber); border:1px solid #7a5300; cursor:pointer;
+    }
+
+    /* 플로팅 컨트롤러 내부는 3열로 더 압축해 스크롤 없이 한 화면에 들어가도록 함 */
+    #floating-controller .gauge-grid{ grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    #floating-controller .section-head{ margin: 8px 0 5px; }
+    #floating-controller .btn{ padding: 6px 8px; font-size:12px; }
+
+    .btn{
+        font-family:'Rajdhani','Noto Sans KR',sans-serif; font-weight:700; letter-spacing:0.05em;
+        border: 1px solid var(--bp-line); background: var(--bp-navy-deep); color: var(--bp-cyan-bright);
+        padding: 8px 10px; border-radius:2px; cursor:pointer; font-size:13px; transition: all .15s;
+    }
+    .btn:hover{ background: var(--bp-line-dim); border-color: var(--bp-cyan); }
+    .btn-amber{ border-color: var(--bp-amber-dim); color: var(--bp-amber); }
+    .btn-amber:hover{ background: rgba(255,183,3,0.12); border-color: var(--bp-amber); }
+    .btn-red{ border-color: #7a2b2b; color: var(--bp-red); }
+    .btn-red:hover{ background: rgba(255,107,107,0.12); border-color: var(--bp-red); }
+    .btn.toggled{ background: var(--bp-amber); color:#1a1200; border-color:var(--bp-amber); }
+
+    /* TCP 치수 박스 */
+    .dim-box{
+        border: 1px dashed var(--bp-line); background: var(--bp-navy-deep);
+        padding: 8px 10px; border-radius:2px; position:relative;
+    }
+    .dim-row{ display:flex; justify-content:space-between; font-family:'JetBrains Mono',monospace; font-size:12px; padding: 2px 0; }
+    .dim-row .k{ color:#5f93b3; }
+    .dim-row .v{ color: var(--bp-cyan-bright); }
+
+    /* 3D 뷰포트 */
+    #viewport{ flex:1; position:relative; min-width:0; }
+    #canvas-container canvas{ touch-action:none; outline:none; }
+    .hud{
+        position:absolute; top:10px; left:10px; background: rgba(4,16,26,0.75);
+        border: 1px solid var(--bp-line-dim); padding: 6px 10px; font-size:10px; color:#8fbfd8;
+        font-family:'JetBrains Mono',monospace; border-radius:2px; z-index:5;
+    }
+    .joint-label{ color: var(--bp-cyan-bright); font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700;
+        padding: 1px 5px; background: rgba(4,16,26,0.85); border:1px solid var(--bp-line); border-radius:2px; pointer-events:none; }
+    .tcp-label{ color: var(--bp-amber); font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700;
+        padding: 1px 5px; background: rgba(4,16,26,0.9); border:1px solid var(--bp-amber-dim); border-radius:2px; pointer-events:none; }
+    .probe-label{ color: var(--bp-probe-bright); font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700;
+        padding: 1px 5px; background: rgba(4,16,26,0.9); border:1px solid var(--bp-probe-bright); border-radius:2px; pointer-events:none; white-space:nowrap; }
+
+    /* 지면 간섭 경고 배너 */
+    #collision-warning{
+        position:absolute; top:10px; left:50%; transform: translateX(-50%);
+        background: rgba(122,43,43,0.92); border: 1px solid var(--bp-red); color:#ffe1e1;
+        font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700;
+        padding: 7px 14px; border-radius:3px; z-index:9; letter-spacing:0.02em;
+        display:none; box-shadow: 0 0 14px rgba(255,107,107,0.5);
+        animation: collision-pulse 1s ease-in-out infinite;
+    }
+    #collision-warning.active{ display:block; }
+    @keyframes collision-pulse{
+        0%, 100% { opacity: 1; } 50% { opacity: 0.6; }
+    }
+
+    /* 플로팅 컨트롤러 (관절제어·그리퍼·시스템 — 뷰포트 위에 직접 배치) */
+    #floating-controller{
+        position:absolute; top:64px; right:16px; width:376px; max-width:calc(100% - 32px);
+        background: rgba(10,33,54,0.88); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+        border: 1px solid var(--bp-line); border-radius: 4px; z-index: 8;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    }
+    #floating-controller-header{
+        display:flex; align-items:center; justify-content:space-between;
+        padding: 7px 10px; border-bottom: 1px solid var(--bp-line-dim);
+        cursor: grab; user-select:none; background: rgba(4,16,26,0.6); border-radius:4px 4px 0 0;
+    }
+    #floating-controller-header:active{ cursor: grabbing; }
+    #floating-controller-header button{
+        background:none; border:1px solid var(--bp-line-dim); color: var(--bp-cyan-bright);
+        width:20px; height:20px; line-height:1; border-radius:2px; cursor:pointer; font-size:11px;
+    }
+    #floating-controller-header button:hover{ border-color: var(--bp-cyan); }
+    #floating-controller-body{ padding: 8px 10px 10px; overflow: visible; }
+    #floating-controller.collapsed #floating-controller-body{ display:none; }
+    #floating-controller.collapsed #btn-controller-collapse{ transform: rotate(-90deg); }
+    @media (max-width: 640px){
+        #floating-controller{ top:auto; bottom:12px; left:12px; right:12px; width:auto; max-width:none; }
+        #floating-controller .gauge-grid{ grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* 하단 표제란 (title block) */
+    #titleblock{
+        display:flex; border-top: 1px solid var(--bp-line); background: var(--bp-navy-deep);
+        font-family:'JetBrains Mono',monospace; font-size:10px; color:#5f93b3;
+    }
+    #titleblock .cell{ padding:5px 12px; border-right: 1px solid var(--bp-line-dim); }
+    #titleblock .cell b{ color: var(--bp-cyan-bright); font-weight:500; }
+</style>
+</head>
+<body>
+<div id="app">
+    <div id="titlebar">
+        <div class="flex items-center gap-3" style="display:flex;align-items:center;gap:10px;">
+            <span class="font-display" style="font-size:19px;font-weight:700;color:var(--bp-cyan-bright);">DWG-ARM6</span>
+            <span class="font-mono" style="font-size:10px;color:#5f93b3;">교육용 6축 수직 다관절 로봇팔 시뮬레이터</span>
+        </div>
+        <div style="display:flex;">
+            <div class="tb-cell"><div class="tb-label">TYPE</div><div class="tb-value font-mono">VERTICAL 6-AXIS</div></div>
+            <div class="tb-cell"><div class="tb-label">AXES</div><div class="tb-value font-mono">J1–J6 + GRIPPER</div></div>
+            <div class="tb-cell"><div class="tb-label">STATUS</div><div class="tb-value font-mono" id="status-text" style="color:var(--bp-cyan-bright);">READY</div></div>
+        </div>
+    </div>
+
+    <div id="main">
+        <!-- 제어판 (참조/설정용) -->
+        <div id="control-panel" class="blueprint-grid">
+            <div class="crop-mark crop-tl"></div><div class="crop-mark crop-tr"></div>
+
+            <div class="section-head"><span class="idx">§1</span> TCP 좌표 · TOOL CENTER POINT</div>
+            <div class="dim-box">
+                <div class="dim-row"><span class="k">X</span><span class="v" id="tcp-x">0.0</span></div>
+                <div class="dim-row"><span class="k">Y</span><span class="v" id="tcp-y">0.0</span></div>
+                <div class="dim-row"><span class="k">Z</span><span class="v" id="tcp-z">0.0</span></div>
+            </div>
+            <p style="font-size:9px;color:#4a7691;margin:6px 2px 0;">순기구학(FK) 계산값 · 단위: cm(가정) · 관절 제어·그리퍼·초기화는 우측 3D 화면 위 플로팅 컨트롤러(C1~C3)에서 조작하세요.</p>
+
+            <div class="section-head"><span class="idx">§2</span> 수행활동 · PERFORMANCE TASK</div>
+            <div class="dim-box" style="margin-bottom:10px;">
+                <label style="font-size:10px;color:#5f93b3;">학번</label>
+                <input id="student-name" type="text" inputmode="numeric" class="font-mono"
+                    style="width:100%;background:var(--bp-navy);border:1px solid var(--bp-line-dim);color:var(--bp-white);padding:5px 6px;margin-top:3px;border-radius:2px;"
+                    placeholder="학번 입력">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                <button id="tab-mission-a" class="btn toggled" data-mission="a">① 자세 재현</button>
+                <button id="tab-mission-b" class="btn" data-mission="b">② 픽앤플레이스</button>
+            </div>
+            <button id="btn-mission-b-randomize" class="btn btn-amber" style="width:100%;margin-bottom:4px;">🎲 작업물·드롭존 위치 랜덤 변경</button>
+            <p style="font-size:9px;color:#4a7691;margin:0 2px 10px;">어느 미션을 보고 있든 언제든 사용 가능합니다. 로봇이 실제로 도달 가능한 범위 안에서만 새 위치를 고릅니다.</p>
+
+            <div id="mission-a-panel">
+                <p style="font-size:11px;color:#8fbfd8;line-height:1.5;margin:0 0 8px;">
+                    <b style="color:var(--bp-cyan-bright);">학습목표</b> 관절좌표계 이해 및 순기구학 기반 자세 제어<br>
+                    <span style="color:#4a7691;">제시된 목표 각도로 3D 화면 위 플로팅 컨트롤러(C1)의 J1~J6 게이지를 조작해 로봇 자세를 재현하세요. (허용오차 ±5°)</span>
+                </p>
+                <div id="pose-target-table" class="dim-box font-mono" style="margin-bottom:8px;"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <button id="btn-pose-new" class="btn">🎲 새 문제</button>
+                    <button id="btn-pose-check" class="btn btn-amber">✔ 채점하기</button>
+                </div>
+                <div id="mission-a-result" class="font-mono" style="display:none;margin-top:8px;font-size:11px;padding:6px;border:1px solid var(--bp-line-dim);border-radius:2px;"></div>
+            </div>
+
+            <div id="mission-b-panel" style="display:none;">
+                <p style="font-size:11px;color:#8fbfd8;line-height:1.5;margin:0 0 8px;">
+                    <b style="color:var(--bp-cyan-bright);">학습목표</b> 엔드이펙터(그리퍼) 제어 및 작업경로 계획<br>
+                    <span style="color:#4a7691;">앰버색 테두리 작업물을 그리퍼로 파지해 청록색 원(목표 구역)까지 옮기세요. 그리퍼를 물체 근처에서 닫으면 파지되고, 목표 구역 위에서 열면 배치가 완료됩니다.</span>
+                </p>
+                <div class="dim-box font-mono" style="margin-bottom:8px;">
+                    <div class="dim-row"><span class="k">상태</span><span class="v" id="mission-b-status">대기 중</span></div>
+                </div>
+                <button id="btn-mission-b-reset" class="btn" style="width:100%;">↺ 같은 위치로 초기화</button>
+            </div>
+
+            <div class="section-head"><span class="idx">§3</span> 수행 기록 · LOG</div>
+            <div id="mission-log" class="dim-box font-mono" style="font-size:10px;max-height:150px;overflow-y:auto;"></div>
+            <button id="btn-copy-log" class="btn" style="width:100%;margin-top:6px;">📋 결과 복사</button>
+            <button id="btn-download-log" class="btn btn-amber" style="width:100%;margin-top:4px;">⬇ 결과 파일 다운로드 (CSV)</button>
+            <p style="font-size:9px;color:#4a7691;margin:4px 2px 0;">학번이 포함된 파일명으로 저장됩니다. 학급 제출함(구글 클래스룸 등)에 올려주세요.</p>
+
+            <div class="section-head"><span class="idx">§4</span> 동작 프로그래밍 · MOTION PROGRAM</div>
+            <p style="font-size:10px;color:#4a7691;line-height:1.5;margin:0 0 8px;">
+                산업용 로봇의 <b style="color:var(--bp-cyan-bright);">교시-재현(Teach &amp; Playback)</b> 방식을 연습하는 코드입니다.
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;">
+                <button id="tab-syntax-simple" class="btn toggled" data-syntax="simple" style="font-size:11px;">교육용 단순 문법</button>
+                <button id="tab-syntax-doosan" class="btn" data-syntax="doosan" style="font-size:11px;">두산 DRL</button>
+                <button id="tab-syntax-ur" class="btn" data-syntax="ur" style="font-size:11px;">UR (URScript)</button>
+            </div>
+            <div id="syntax-note" class="font-mono" style="font-size:9px;color:#4a7691;line-height:1.6;margin:0 0 8px;padding:6px 8px;border:1px dashed var(--bp-line-dim);border-radius:2px;">
+                MoveJ / Gripper / Wait는 이 시뮬레이터가 만든 교육용 형식입니다.
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+                <button id="btn-record-pose" class="btn btn-amber">📍 현재 자세 기록</button>
+                <button id="btn-add-wait" class="btn">⏱ 대기(1s) 추가</button>
+                <button id="btn-add-gripper-open" class="btn">↔ 그리퍼 열기 추가</button>
+                <button id="btn-add-gripper-close" class="btn">⇔ 그리퍼 닫기 추가</button>
+            </div>
+            <div id="program-steps" class="dim-box font-mono" style="font-size:10px;max-height:110px;overflow-y:auto;margin-bottom:8px;"></div>
+            <textarea id="program-code" readonly class="font-mono"
+                style="width:100%;height:120px;background:var(--bp-navy-deep);border:1px solid var(--bp-line-dim);color:var(--bp-cyan-bright);font-size:11px;padding:6px;border-radius:2px;resize:vertical;"></textarea>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
+                <button id="btn-undo-step" class="btn">↺ 직전 동작 취소</button>
+                <button id="btn-reset-sim" class="btn">⟲ 재생 준비 초기화</button>
+            </div>
+            <p style="font-size:9px;color:#4a7691;margin:4px 2px 0;">재생 준비 초기화: 로봇 자세·그리퍼·픽앤플레이스 물체 위치를 시작 상태로 되돌립니다 (기록된 코드는 유지).</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
+                <button id="btn-play-program" class="btn btn-amber">▶ 재생</button>
+                <button id="btn-copy-program" class="btn">📋 코드 복사</button>
+            </div>
+            <button id="btn-clear-program" class="btn btn-red" style="width:100%;margin-top:6px;">✕ 프로그램 전체 삭제</button>
+
+            <div class="section-head"><span class="idx">§5</span> 코드 입력 실행 · CODE INPUT</div>
+            <p style="font-size:10px;color:#4a7691;line-height:1.5;margin:0 0 8px;">
+                교육용 단순 문법, 두산 DRL 스타일, UR(URScript) 스타일을 모두 인식합니다. 한 줄에 한 명령씩 입력하세요.
+                <span class="font-mono" style="color:var(--bp-cyan-bright);">MoveJ / Gripper / Wait</span> ·
+                <span class="font-mono" style="color:var(--bp-cyan-bright);">movej(posj) / set_digital_output / wait</span> ·
+                <span class="font-mono" style="color:var(--bp-cyan-bright);">movej([q]) / set_digital_out / sleep</span>
+            </p>
+            <textarea id="code-input" class="font-mono"
+                style="width:100%;height:130px;background:var(--bp-navy-deep);border:1px solid var(--bp-line-dim);color:var(--bp-white);font-size:11px;padding:6px;border-radius:2px;resize:vertical;"
+                placeholder="MoveJ(J1=0, J2=-20, J3=-40, J4=0, J5=0, J6=0)&#10;Gripper(CLOSE)&#10;Wait(1000)&#10;&#10;movej(posj(45,-10,-30,0,20,0), vel=60, acc=60)&#10;set_digital_output(1, ON)&#10;wait(1)&#10;&#10;movej([0.785, -0.175, -0.524, 0, 0.349, 0], a=1.4, v=1.0)&#10;set_digital_out(0, True)&#10;sleep(1)"></textarea>
+            <div id="code-input-status" class="font-mono" style="font-size:10px;margin:6px 0;min-height:14px;"></div>
+            <button id="btn-load-code-play" class="btn btn-amber" style="width:100%;">▶ 코드 실행</button>
+
+            <div class="section-head"><span class="idx">§6</span> 역기구학 위치 제어 · IK (실험적)</div>
+            <p style="font-size:10px;color:#4a7691;line-height:1.5;margin:0 0 8px;">
+                목표 좌표(X, Y, Z)를 입력하면 J1~J3을 계산해 그 위치로 이동합니다. 손목(J4~J6)은 0°로 고정하는
+                <b style="color:var(--bp-cyan-bright);">위치 전용 IK</b>이며, 방향(자세)까지 함께 계산하는 완전한 6DOF IK는 아닙니다.
+            </p>
+            <div class="dim-box" style="margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span style="font-size:10px;color:var(--bp-probe-bright);font-weight:700;">🟢 좌표 측정 구체 (PROBE)</span>
+                </div>
+                <p style="font-size:9px;color:#4a7691;margin:0 0 6px;line-height:1.5;">
+                    3D 화면 속 초록 구체를 드래그하면 그 지점의 좌표가 항상 표시됩니다. 화면을 회전하면서 여러 각도에서 옮기면 공중의 임의 지점도 지정할 수 있습니다.
+                </p>
+                <div class="dim-row"><span class="k">X</span><span class="v" id="probe-x">0.0</span></div>
+                <div class="dim-row"><span class="k">Y</span><span class="v" id="probe-y">0.0</span></div>
+                <div class="dim-row"><span class="k">Z</span><span class="v" id="probe-z">0.0</span></div>
+            </div>
+            <button id="btn-probe-to-ik" class="btn" style="width:100%;margin-bottom:8px;">↓ 프로브 좌표를 IK 입력창에 채우기</button>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;">
+                <div><label style="font-size:9px;color:#5f93b3;">X</label>
+                    <input id="ik-x" type="number" value="20" class="font-mono"
+                        style="width:100%;background:var(--bp-navy);border:1px solid var(--bp-line-dim);color:var(--bp-white);padding:4px;border-radius:2px;"></div>
+                <div><label style="font-size:9px;color:#5f93b3;">Y</label>
+                    <input id="ik-y" type="number" value="20" class="font-mono"
+                        style="width:100%;background:var(--bp-navy);border:1px solid var(--bp-line-dim);color:var(--bp-white);padding:4px;border-radius:2px;"></div>
+                <div><label style="font-size:9px;color:#5f93b3;">Z</label>
+                    <input id="ik-z" type="number" value="20" class="font-mono"
+                        style="width:100%;background:var(--bp-navy);border:1px solid var(--bp-line-dim);color:var(--bp-white);padding:4px;border-radius:2px;"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
+                <button id="btn-ik-pull-workpiece" class="btn" style="font-size:11px;">📦 작업물 좌표</button>
+                <button id="btn-ik-pull-dropzone" class="btn" style="font-size:11px;">🎯 드롭존 좌표</button>
+            </div>
+            <button id="btn-ik-solve" class="btn btn-amber" style="width:100%;">🎯 IK 계산 후 이동</button>
+            <div id="ik-status" class="font-mono" style="font-size:10px;margin-top:6px;min-height:14px;line-height:1.4;"></div>
+        </div>
+
+        <!-- 3D 뷰포트 -->
+        <div id="viewport">
+            <div id="canvas-container" style="position:absolute;inset:0;"></div>
+            <div id="label-container" style="position:absolute;inset:0;"></div>
+            <div class="hud">DRAG · ORBIT&nbsp;&nbsp;|&nbsp;&nbsp;SCROLL · ZOOM</div>
+            <div class="hud" id="floor-coord-hud" style="top:44px;">바닥 위에 마우스를 올리면 좌표가 표시됩니다 · 클릭하면 IK 입력창에 채워집니다</div>
+            <div class="crop-mark crop-tr"></div><div class="crop-mark crop-br"></div>
+            <div id="collision-warning">⚠ 지면 간섭 발생 — 로봇이 바닥과 겹칩니다</div>
+
+            <!-- 플로팅 컨트롤러: 관절 제어·그리퍼·시스템 (뷰포트 위에 직접 배치, 드래그로 이동 가능) -->
+            <div id="floating-controller">
+                <div id="floating-controller-header">
+                    <span class="font-display" style="font-size:12px;letter-spacing:0.08em;color:var(--bp-cyan-bright);">⠿ CONTROLLER</span>
+                    <button id="btn-controller-collapse" title="접기/펴기">▾</button>
+                </div>
+                <div id="floating-controller-body">
+                    <div class="section-head" style="margin-top:0;"><span class="idx">C1</span> 관절 제어 · JOINT CONTROL</div>
+                    <div id="joint-controls" class="gauge-grid"></div>
+
+                    <div class="section-head"><span class="idx">C2</span> 그리퍼 · END EFFECTOR</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <button id="btn-gripper-open" class="btn">↔ OPEN</button>
+                        <button id="btn-gripper-close" class="btn btn-amber">⇔ CLOSE</button>
+                    </div>
+
+                    <div class="section-head"><span class="idx">C3</span> 시스템 · SYSTEM</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <button id="btn-reset" class="btn btn-red">⟲ 초기 자세</button>
+                        <button id="btn-home" class="btn">⌖ 뷰 정렬</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="titleblock">
+        <div class="cell">SHEET <b>1 / 1</b></div>
+        <div class="cell">SCALE <b>N.T.S.</b></div>
+        <div class="cell">PROJECT <b>AI DAY · 교육용 로봇팔 시뮬레이터</b></div>
+        <div class="cell">REV <b>A · STEP 1–4</b></div>
+    </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { DragControls } from 'three/addons/controls/DragControls.js';
+
+let scene, camera, renderer, orbitControls, labelRenderer;
+const DEG = Math.PI / 180;
+
+const JOINT_DEFS = [
+    { id: 'J1', name: '베이스', axis: 'y', min: -170, max: 170, home: 0 },
+    { id: 'J2', name: '숄더',   axis: 'z', min: -95,  max: 120, home: -20 },
+    { id: 'J3', name: '엘보',   axis: 'z', min: -150, max: 10,  home: -40 },
+    { id: 'J4', name: '손목롤', axis: 'y', min: -180, max: 180, home: 0 },
+    { id: 'J5', name: '손목피치', axis: 'z', min: -125, max: 125, home: 0 },
+    { id: 'J6', name: '툴회전', axis: 'y', min: -360, max: 360, home: 0 }
+];
+
+const LINK = { baseHeight:6, shoulderOffset:3, upperArm:22, forearm:20, wristLink1:5, wristLink2:5, toolLength:4 };
+
+const jointGroups = [];
+let gripperOpen = true;
+// 조작 방지용: 슬라이더 DOM 값이 아니라, 실제 정상 경로(이벤트/애니메이션)로만 갱신되는 내부 상태.
+// 콘솔에서 슬라이더 .value만 직접 바꿔도 이 배열은 변하지 않으므로 채점은 항상 이 값을 기준으로 함.
+let liveJointAngles = JOINT_DEFS.map(def => def.home);
+let groundCollisionActive = false;
+let collisionMarker = null;
+const GROUND_COLLISION_THRESHOLD = 0.5; // 이 Y값 아래로 관절/TCP 중심이 내려가면 간섭으로 판정
+let leftFinger, rightFinger, tcpMarker;
+
+const BP_CYAN = 0x6fd3f2;
+const BP_AMBER = 0xffb703;
+const BP_LINK = 0x0d2c42;
+const BP_RED = 0xff6b6b;
+const BP_PROBE = 0x39ff8f;
+
+function init() {
+    const container = document.getElementById('canvas-container');
+    const labelContainer = document.getElementById('label-container');
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x061524);
+    scene.fog = new THREE.Fog(0x061524, 135, 330);
+
+    camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera.position.set(77, 63, 77);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(container.clientWidth, container.clientHeight);
+    labelContainer.appendChild(labelRenderer.domElement);
+
+    orbitControls = new OrbitControls(camera, labelRenderer.domElement);
+    orbitControls.enableDamping = true;
+    orbitControls.dampingFactor = 0.08;
+    orbitControls.target.set(0, 15, 0);
+
+    scene.add(new THREE.AmbientLight(0x8fd6f2, 0.55));
+    const dirLight = new THREE.DirectionalLight(0xdff6ff, 0.9);
+    dirLight.position.set(30, 50, 20);
+    scene.add(dirLight);
+    const rim = new THREE.DirectionalLight(0x2a7fb0, 0.6);
+    rim.position.set(-40, 20, -30);
+    scene.add(rim);
+
+    // 청사진 격자 바닥 (1.5배 확장: 80→120, 칸 간격은 4단위로 동일하게 유지)
+    const grid = new THREE.GridHelper(120, 30, 0x2a6f96, 0x123249);
+    scene.add(grid);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshBasicMaterial({ color: 0x06182a }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.02;
+    scene.add(floor);
+
+    buildArm();
+    createJointUI();
+    applyAllJoints();
+    buildMissionObjects();
+    generatePoseTarget();
+    renderMissionLog();
+
+    document.getElementById('btn-reset').addEventListener('click', resetPose);
+    document.getElementById('btn-home').addEventListener('click', () => {
+        camera.position.set(77, 63, 77);
+        orbitControls.target.set(0, 15, 0);
+    });
+    document.getElementById('btn-gripper-open').addEventListener('click', () => setGripper(true));
+    document.getElementById('btn-gripper-close').addEventListener('click', () => setGripper(false));
+
+    document.querySelectorAll('[data-mission]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentMission = btn.dataset.mission;
+            document.querySelectorAll('[data-mission]').forEach(b => b.classList.remove('toggled'));
+            btn.classList.add('toggled');
+            document.getElementById('mission-a-panel').style.display = currentMission === 'a' ? '' : 'none';
+            document.getElementById('mission-b-panel').style.display = currentMission === 'b' ? '' : 'none';
+        });
+    });
+
+    const syntaxNotes = {
+        simple: 'MoveJ / Gripper / Wait는 이 시뮬레이터가 만든 교육용 형식입니다.',
+        doosan: 'movej(posj(...), vel=, acc=)는 두산로보틱스 공식 매뉴얼·API 문서에서 확인한 실제 문법입니다. 다만 그리퍼(set_digital_output)와 wait()의 정확한 함수명·인자는 확인하지 못해 합리적으로 추정한 것이며, 실제 로봇에 쓰기 전 두산 매뉴얼로 재확인이 필요합니다. 속도(vel)·가속도(acc) 값은 표시만 되고 이 시뮬레이터의 재생 속도에는 반영되지 않습니다.',
+        ur: 'movej([q], a=, v=), set_digital_out(), sleep()는 Universal Robots 공식 URScript 매뉴얼·ROS 문서에서 확인한 실제 문법입니다. UR은 관절각을 도(°)가 아니라 라디안(rad)으로 표기하므로 그대로 변환해 보여줍니다. 그리퍼는 디지털 출력 0번을 관례적으로 사용한 것이며 실제 배선·극성은 장비마다 다를 수 있습니다. 속도(a, v) 값은 표시만 되고 재생 속도에는 반영되지 않습니다.'
+    };
+    document.querySelectorAll('[data-syntax]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            codeSyntaxStyle = btn.dataset.syntax;
+            document.querySelectorAll('[data-syntax]').forEach(b => b.classList.remove('toggled'));
+            btn.classList.add('toggled');
+            document.getElementById('syntax-note').textContent = syntaxNotes[codeSyntaxStyle];
+            renderProgram();
+        });
+    });
+
+    document.getElementById('btn-pose-new').addEventListener('click', generatePoseTarget);
+    document.getElementById('btn-pose-check').addEventListener('click', checkPoseMission);
+    document.getElementById('btn-mission-b-reset').addEventListener('click', resetMissionB);
+    document.getElementById('btn-mission-b-randomize').addEventListener('click', randomizeMissionBPositions);
+    document.getElementById('btn-copy-log').addEventListener('click', copyMissionLog);
+
+    document.getElementById('btn-record-pose').addEventListener('click', recordCurrentPose);
+    document.getElementById('btn-add-wait').addEventListener('click', () => { motionProgram.push({ type: 'wait', ms: 1000 }); renderProgram(); });
+    document.getElementById('btn-add-gripper-open').addEventListener('click', () => { motionProgram.push({ type: 'gripper', state: 'open' }); renderProgram(); });
+    document.getElementById('btn-add-gripper-close').addEventListener('click', () => { motionProgram.push({ type: 'gripper', state: 'close' }); renderProgram(); });
+    document.getElementById('btn-undo-step').addEventListener('click', undoLastStep);
+    document.getElementById('btn-reset-sim').addEventListener('click', resetSimulationState);
+    document.getElementById('btn-play-program').addEventListener('click', playProgram);
+    document.getElementById('btn-clear-program').addEventListener('click', () => { motionProgram.length = 0; renderProgram(); });
+    document.getElementById('btn-copy-program').addEventListener('click', copyProgramCode);
+    document.getElementById('btn-load-code-play').addEventListener('click', () => loadProgramFromInput(true));
+    document.getElementById('btn-download-log').addEventListener('click', downloadResultsCsv);
+    document.getElementById('btn-ik-solve').addEventListener('click', runIK);
+    renderProgram();
+
+    document.getElementById('btn-ik-pull-workpiece').addEventListener('click', () => {
+        const wp = new THREE.Vector3();
+        workpiece.getWorldPosition(wp); // 시작 좌표가 아니라 현재 실제 위치(옮겨졌다면 그 위치)
+        pullCoordsToIK(wp.x, wp.y, wp.z);
+    });
+    document.getElementById('btn-probe-to-ik').addEventListener('click', () => {
+        if (!probeMesh) return;
+        pullCoordsToIK(probeMesh.position.x, probeMesh.position.y, probeMesh.position.z);
+    });
+    document.getElementById('btn-ik-pull-dropzone').addEventListener('click', () => pullCoordsToIK(DROPZONE_POS.x, WORKPIECE_REST_Y, DROPZONE_POS.z));
+    initFloorPicking();
+    initFloatingController();
+    initCollisionMarker();
+    initCoordinateProbe();
+
+    window.addEventListener('resize', onResize);
+    animate();
+}
+
+// 청사진 스타일: 반투명 네이비 솔리드 + 시안 와이어프레임 외곽선
+const robotLinkMaterials = []; // 지면 간섭 시 빨간색으로 전환하기 위해 각 링크 재질을 기록
+function blueprintMesh(geometry, opts = {}) {
+    const group = new THREE.Group();
+    const baseColor = opts.color ?? BP_LINK;
+    const baseLineColor = opts.lineColor ?? BP_CYAN;
+    const solidMat = new THREE.MeshStandardMaterial({
+        color: baseColor, transparent: true, opacity: opts.opacity ?? 0.55,
+        metalness: 0.1, roughness: 0.6
+    });
+    const solid = new THREE.Mesh(geometry, solidMat);
+    group.add(solid);
+    const edges = new THREE.EdgesGeometry(geometry, 20);
+    const lineMat = new THREE.LineBasicMaterial({ color: baseLineColor, transparent:true, opacity: 0.85 });
+    const wire = new THREE.LineSegments(edges, lineMat);
+    group.add(wire);
+    if (opts.trackForCollision !== false) {
+        robotLinkMaterials.push({ solidMat, lineMat, baseColor, baseLineColor });
+    }
+    return group;
+}
+
+function buildArm() {
+    // 베이스
+    const baseGroup = blueprintMesh(new THREE.CylinderGeometry(6, 7, LINK.baseHeight, 16), { opacity: 0.65 });
+    baseGroup.position.y = LINK.baseHeight / 2;
+    scene.add(baseGroup);
+
+    const j1Pivot = new THREE.Group();
+    j1Pivot.position.set(0, LINK.baseHeight, 0);
+    scene.add(j1Pivot);
+    jointGroups.push(j1Pivot);
+    addJointMarker(j1Pivot, 1.5);
+    addJointLabel(j1Pivot, 'J1', 3.6);
+
+    const shoulderRiser = blueprintMesh(new THREE.BoxGeometry(4, LINK.shoulderOffset, 4));
+    shoulderRiser.position.y = LINK.shoulderOffset / 2 + 3;
+    j1Pivot.add(shoulderRiser);
+
+    const j2Pivot = new THREE.Group();
+    j2Pivot.position.y = LINK.shoulderOffset + 3;
+    j1Pivot.add(j2Pivot);
+    jointGroups.push(j2Pivot);
+    addJointMarker(j2Pivot, 0);
+    addJointLabel(j2Pivot, 'J2', 4.4);
+
+    const upperArm = blueprintMesh(new THREE.BoxGeometry(3.2, LINK.upperArm, 3.2));
+    upperArm.position.y = LINK.upperArm / 2;
+    j2Pivot.add(upperArm);
+
+    const j3Pivot = new THREE.Group();
+    j3Pivot.position.y = LINK.upperArm;
+    j2Pivot.add(j3Pivot);
+    jointGroups.push(j3Pivot);
+    addJointMarker(j3Pivot, 0);
+    addJointLabel(j3Pivot, 'J3', 3.8);
+
+    const forearm = blueprintMesh(new THREE.BoxGeometry(2.6, LINK.forearm, 2.6));
+    forearm.position.y = LINK.forearm / 2;
+    j3Pivot.add(forearm);
+
+    const j4Pivot = new THREE.Group();
+    j4Pivot.position.y = LINK.forearm;
+    j3Pivot.add(j4Pivot);
+    jointGroups.push(j4Pivot);
+    addJointMarker(j4Pivot, 0);
+    addJointLabel(j4Pivot, 'J4', 3.0);
+
+    const wristLink1 = blueprintMesh(new THREE.BoxGeometry(2.2, LINK.wristLink1, 2.2));
+    wristLink1.position.y = LINK.wristLink1 / 2;
+    j4Pivot.add(wristLink1);
+
+    const j5Pivot = new THREE.Group();
+    j5Pivot.position.y = LINK.wristLink1;
+    j4Pivot.add(j5Pivot);
+    jointGroups.push(j5Pivot);
+    addJointMarker(j5Pivot, 0);
+    addJointLabel(j5Pivot, 'J5', 2.8);
+
+    const wristLink2 = blueprintMesh(new THREE.BoxGeometry(1.9, LINK.wristLink2, 1.9));
+    wristLink2.position.y = LINK.wristLink2 / 2;
+    j5Pivot.add(wristLink2);
+
+    const j6Pivot = new THREE.Group();
+    j6Pivot.position.y = LINK.wristLink2;
+    j5Pivot.add(j6Pivot);
+    jointGroups.push(j6Pivot);
+    addJointMarker(j6Pivot, 0);
+    addJointLabel(j6Pivot, 'J6', 2.6);
+
+    const gripperBase = blueprintMesh(new THREE.BoxGeometry(3.4, LINK.toolLength, 2.2), { opacity: 0.7 });
+    gripperBase.position.y = LINK.toolLength / 2;
+    j6Pivot.add(gripperBase);
+
+    const fingerGeo = new THREE.BoxGeometry(0.8, 3.2, 1.6);
+    const fingerGroupL = blueprintMesh(fingerGeo, { color: 0x123249, lineColor: BP_AMBER, opacity: 0.8 });
+    const fingerGroupR = blueprintMesh(fingerGeo, { color: 0x123249, lineColor: BP_AMBER, opacity: 0.8 });
+    leftFinger = fingerGroupL; rightFinger = fingerGroupR;
+    leftFinger.position.set(-1.3, LINK.toolLength + 1.6, 0);
+    rightFinger.position.set(1.3, LINK.toolLength + 1.6, 0);
+    j6Pivot.add(leftFinger, rightFinger);
+
+    tcpMarker = new THREE.Group();
+    tcpMarker.position.y = LINK.toolLength + 3.2;
+    j6Pivot.add(tcpMarker);
+    const tcpDot = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 12), new THREE.MeshBasicMaterial({ color: BP_AMBER }));
+    tcpMarker.add(tcpDot);
+    const tcpDiv = document.createElement('div');
+    tcpDiv.className = 'tcp-label';
+    tcpDiv.textContent = 'TCP';
+    const tcpLabel = new CSS2DObject(tcpDiv);
+    tcpLabel.position.set(0, 1.4, 0);
+    tcpMarker.add(tcpLabel);
+}
+
+function addJointMarker(group, yOffset) {
+    const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(2.4, 16, 16),
+        new THREE.MeshStandardMaterial({ color: BP_AMBER, emissive: 0x442e00, emissiveIntensity: 0.4 })
+    );
+    marker.position.y = yOffset;
+    group.add(marker);
+}
+
+function addJointLabel(group, text, height) {
+    const div = document.createElement('div');
+    div.className = 'joint-label';
+    div.textContent = text;
+    const label = new CSS2DObject(div);
+    label.position.set(0, height, 0);
+    group.add(label);
+}
+
+const GRIPPER_OPEN_OFFSET = 1.3;
+let gripperClosedOffset = 0.35; // 물체를 잡지 않았을 때 기본 닫힘 간격 — 잡을 때 물체 폭에 맞춰 동적으로 바뀜
+
+function setGripper(open) {
+    gripperOpen = open;
+    const offset = open ? GRIPPER_OPEN_OFFSET : gripperClosedOffset;
+    leftFinger.position.x = -offset;
+    rightFinger.position.x = offset;
+    document.getElementById('btn-gripper-open').classList.toggle('toggled', open);
+    document.getElementById('btn-gripper-close').classList.toggle('toggled', !open);
+    document.getElementById('status-text').textContent = open ? 'GRIPPER OPEN' : 'GRIPPER CLOSED';
+}
+
+// 분도기(protractor) SVG 생성 — 반원 게이지 + 바늘
+function protractorSVG(min, max, home) {
+    const w = 150, h = 82, cx = 75, cy = 76, r = 60;
+    const arcPath = describeArc(cx, cy, r, -180, 0);
+    let ticks = '';
+    for (let t = 0; t <= 8; t++) {
+        const a = -180 + (t / 8) * 180;
+        const p1 = polarPoint(cx, cy, r - 6, a);
+        const p2 = polarPoint(cx, cy, r, a);
+        ticks += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#1f5c85" stroke-width="1.5"/>`;
+    }
+    return `
+    <svg class="protractor" width="${w}" height="${h+4}" viewBox="0 0 ${w} ${h+4}">
+        <path d="${arcPath}" fill="none" stroke="#123249" stroke-width="7" stroke-linecap="round"/>
+        ${ticks}
+        <path class="active-arc" d="${arcPath}" fill="none" stroke="#6fd3f2" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
+        <g class="needle-group">
+            <line class="needle" x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy-r+10}" stroke="#ffb703" stroke-width="2.5" stroke-linecap="round"/>
+        </g>
+        <circle cx="${cx}" cy="${cy}" r="4" fill="#ffb703"/>
+    </svg>`;
+}
+function polarPoint(cx, cy, r, angleDeg){
+    const a = (angleDeg) * Math.PI / 180;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+}
+function describeArc(cx, cy, r, startAngle, endAngle){
+    const s = polarPoint(cx, cy, r, endAngle);
+    const e = polarPoint(cx, cy, r, startAngle);
+    return `M ${s.x} ${s.y} A ${r} ${r} 0 0 0 ${e.x} ${e.y}`;
+}
+
+function createJointUI() {
+    const container = document.getElementById('joint-controls');
+    container.innerHTML = '';
+    JOINT_DEFS.forEach((def, i) => {
+        const card = document.createElement('div');
+        card.className = 'gauge-card';
+        card.id = `joint-card-${i}`;
+        card.innerHTML = `
+            <div class="g-title"><span>${def.id} · ${def.name}</span></div>
+            <div class="g-sub font-mono">RANGE ${def.min}° ~ ${def.max}°</div>
+            ${protractorSVG(def.min, def.max, def.home)}
+            <div class="digital-readout"><span id="joint-val-${i}">${def.home}</span><span>°</span></div>
+            <input type="range" class="gauge-slider" id="joint-slider-${i}" min="${def.min}" max="${def.max}" step="1" value="${def.home}">
+        `;
+        container.appendChild(card);
+        const slider = card.querySelector(`#joint-slider-${i}`);
+        slider.addEventListener('input', () => {
+            const val = parseFloat(slider.value);
+            liveJointAngles[i] = val;
+            document.getElementById(`joint-val-${i}`).textContent = slider.value;
+            applyJoint(i, val);
+            updateNeedle(card, def, val);
+            updateTcpReadout();
+        });
+        updateNeedle(card, def, def.home);
+    });
+}
+
+function updateNeedle(card, def, value) {
+    const percent = (value - def.min) / (def.max - def.min);
+    const angle = -180 + percent * 180; // -180(left) → 0(right)
+    const needleGroup = card.querySelector('.needle-group');
+    needleGroup.setAttribute('transform', `rotate(${angle + 90} 75 76)`);
+}
+
+function applyJoint(index, angleDeg) {
+    const def = JOINT_DEFS[index];
+    const group = jointGroups[index];
+    const axisVec = def.axis === 'x' ? new THREE.Vector3(1,0,0) : def.axis === 'y' ? new THREE.Vector3(0,1,0) : new THREE.Vector3(0,0,1);
+    group.quaternion.setFromAxisAngle(axisVec, angleDeg * DEG);
+}
+
+function applyAllJoints() {
+    JOINT_DEFS.forEach((def, i) => applyJoint(i, def.home));
+    updateTcpReadout();
+}
+
+function resetPose() {
+    JOINT_DEFS.forEach((def, i) => {
+        const slider = document.getElementById(`joint-slider-${i}`);
+        slider.value = def.home;
+        liveJointAngles[i] = def.home;
+        document.getElementById(`joint-val-${i}`).textContent = def.home;
+        applyJoint(i, def.home);
+        updateNeedle(document.getElementById(`joint-card-${i}`), def, def.home);
+    });
+    setGripper(true);
+    document.getElementById('status-text').textContent = 'READY';
+    updateTcpReadout();
+}
+
+function updateTcpReadout() {
+    if (!tcpMarker) return;
+    const world = new THREE.Vector3();
+    tcpMarker.getWorldPosition(world);
+    document.getElementById('tcp-x').textContent = world.x.toFixed(1);
+    document.getElementById('tcp-y').textContent = world.y.toFixed(1);
+    document.getElementById('tcp-z').textContent = world.z.toFixed(1);
+}
+
+function onResize() {
+    const c = document.getElementById('canvas-container');
+    camera.aspect = c.clientWidth / c.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(c.clientWidth, c.clientHeight);
+    labelRenderer.setSize(c.clientWidth, c.clientHeight);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    orbitControls.update();
+    missionBTick();
+    checkGroundCollision();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+}
+
+// ===================================================================
+// §2 수행활동 (Performance Task)
+// ===================================================================
+let currentMission = 'a';
+const POSE_TOLERANCE = 5; // 허용오차(도)
+let poseTarget = null;
+
+function randStep(min, max, step = 5) {
+    const n = Math.round((min + Math.random() * (max - min)) / step) * step;
+    return Math.max(min, Math.min(max, n));
+}
+
+function generatePoseTarget() {
+    poseTarget = JOINT_DEFS.map(def => randStep(def.min, def.max));
+    const box = document.getElementById('pose-target-table');
+    box.innerHTML = JOINT_DEFS.map((def, i) =>
+        `<div class="dim-row"><span class="k">${def.id} · ${def.name} 목표</span><span class="v">${poseTarget[i]}°</span></div>`
+    ).join('');
+    document.getElementById('mission-a-result').style.display = 'none';
+}
+
+function checkPoseMission() {
+    if (!poseTarget) return;
+    let passCount = 0;
+    const detailParts = [];
+    JOINT_DEFS.forEach((def, i) => {
+        const cur = liveJointAngles[i]; // DOM 슬라이더 값이 아닌 내부 상태 — 콘솔 조작 방지
+        const diff = Math.abs(cur - poseTarget[i]);
+        const ok = diff <= POSE_TOLERANCE;
+        if (ok) passCount++;
+        detailParts.push(`${def.id} 목표${poseTarget[i]}°/현재${cur.toFixed(0)}°/오차${diff.toFixed(0)}°${ok ? 'OK' : 'X'}`);
+    });
+    const score = Math.round((passCount / JOINT_DEFS.length) * 100);
+    const pass = passCount === JOINT_DEFS.length;
+
+    const resultEl = document.getElementById('mission-a-result');
+    resultEl.style.display = '';
+    resultEl.style.color = pass ? 'var(--bp-cyan-bright)' : 'var(--bp-red)';
+    resultEl.style.borderColor = pass ? 'var(--bp-cyan)' : '#7a2b2b';
+    resultEl.textContent = pass
+        ? `✔ 합격 (${score}점) — 6개 관절 모두 허용오차 이내입니다.`
+        : `✘ 재도전 필요 (${score}점) — ${passCount}/6개 관절만 허용오차 이내입니다.`;
+
+    logMission('자세 재현', pass, score, detailParts.join(' / '));
+}
+
+// ── 픽앤플레이스 미션 ──
+let workpiece, dropZoneMesh;
+let heldObject = false;
+let missionBDone = false;
+let isWorkpieceFalling = false;
+const WORKPIECE_START = { x: 24, z: 10 };
+const DROPZONE_POS = { x: -22, z: -14 };
+const WORKPIECE_SIZE = 1.6; // 그리퍼 개방 간격(약 2.6)보다 작게 — 실제로 손가락 사이에 들어갈 수 있는 크기
+const WORKPIECE_HALF = WORKPIECE_SIZE / 2;
+const WORKPIECE_REST_Y = WORKPIECE_HALF; // 바닥에 놓였을 때 중심 높이 (바닥에 밑면이 닿음)
+const GRAB_DIST = 3.4;
+const DROP_DIST = 4.2;
+
+function buildMissionObjects() {
+    const geo = new THREE.BoxGeometry(WORKPIECE_SIZE, WORKPIECE_SIZE, WORKPIECE_SIZE);
+    // trackForCollision을 켜서, 작업물이 바닥과 겹칠 때도 로봇 링크와 동일하게 빨간색으로 표시되도록 함
+    workpiece = blueprintMesh(geo, { color: 0x123249, lineColor: BP_AMBER, opacity: 0.8 });
+    workpiece.position.set(WORKPIECE_START.x, WORKPIECE_REST_Y, WORKPIECE_START.z);
+    scene.add(workpiece);
+
+    const ringGeo = new THREE.RingGeometry(3.2, 3.9, 32);
+    const ringMat = new THREE.MeshBasicMaterial({ color: BP_CYAN, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+    dropZoneMesh = new THREE.Mesh(ringGeo, ringMat);
+    dropZoneMesh.rotation.x = -Math.PI / 2;
+    dropZoneMesh.position.set(DROPZONE_POS.x, 0.05, DROPZONE_POS.z);
+    scene.add(dropZoneMesh);
+}
+
+function resetMissionB() {
+    // 재생 중 그리퍼에 붙어있는 상태에서 초기화하는 경우, 씬으로 되돌려 놓음
+    if (workpiece.parent && workpiece.parent !== scene) scene.add(workpiece);
+    heldObject = false;
+    missionBDone = false;
+    isWorkpieceFalling = false;
+    gripperClosedOffset = 0.35;
+    workpiece.rotation.set(0, 0, 0);
+    workpiece.position.set(WORKPIECE_START.x, WORKPIECE_REST_Y, WORKPIECE_START.z);
+    document.getElementById('mission-b-status').textContent = '대기 중';
+}
+
+// 그리퍼(J6)의 자식으로 실제 부착 — 이후 그리퍼가 움직이고 회전하는 대로 물체도 그대로 따라감
+// 손가락 간격도 물체 폭에 맞춰 다시 스냅해서, 물체를 뚫고 지나가지 않고 표면에서 맞물리도록 함
+function attachWorkpieceToGripper() {
+    const j6Pivot = jointGroups[5];
+    j6Pivot.add(workpiece);
+    workpiece.position.set(0, LINK.toolLength + 1.6, 0); // 두 손가락 사이 높이와 동일
+    workpiece.rotation.set(0, 0, 0);
+    heldObject = true;
+    gripperClosedOffset = WORKPIECE_HALF + 0.05; // 손가락이 물체 표면에서 멈추도록
+    setGripper(false);
+}
+
+// 중력 낙하 애니메이션: 순간이동이 아니라 목표 높이까지 가속하며 떨어짐
+function animateWorkpieceFall(targetY, durationMs = 350) {
+    return new Promise(resolve => {
+        const startY = workpiece.position.y;
+        if (Math.abs(startY - targetY) < 0.02) { workpiece.position.y = targetY; resolve(); return; }
+        const startTime = performance.now();
+        function step(now) {
+            const t = Math.min(1, (now - startTime) / durationMs);
+            const eased = t * t; // 중력 가속 느낌의 ease-in
+            workpiece.position.y = startY + (targetY - startY) * eased;
+            if (t < 1) requestAnimationFrame(step); else { workpiece.position.y = targetY; resolve(); }
+        }
+        requestAnimationFrame(step);
+    });
+}
+
+// 그리퍼에서 분리 → 씬으로 재부모화(월드 좌표 유지) → 낙하 → 배치 판정
+async function releaseWorkpieceFromGripper() {
+    const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
+    workpiece.getWorldPosition(worldPos);
+    workpiece.getWorldQuaternion(worldQuat);
+    scene.add(workpiece);
+    workpiece.position.copy(worldPos);
+    workpiece.quaternion.copy(worldQuat);
+    heldObject = false;
+    gripperClosedOffset = 0.35; // 다음에 빈 채로 닫을 때는 기본 간격으로 복귀
+
+    isWorkpieceFalling = true;
+    document.getElementById('mission-b-status').textContent = '낙하 중...';
+    await animateWorkpieceFall(WORKPIECE_REST_Y);
+    workpiece.rotation.set(0, 0, 0); // 착지 후 자세 정리
+    isWorkpieceFalling = false;
+
+    const dropDist = Math.hypot(workpiece.position.x - DROPZONE_POS.x, workpiece.position.z - DROPZONE_POS.z);
+    if (dropDist < DROP_DIST) {
+        missionBDone = true;
+        document.getElementById('mission-b-status').textContent = '✔ 배치 완료';
+        logMission('픽앤플레이스', true, 100, `배치 성공 (드롭존 오차 ${dropDist.toFixed(1)})`);
+    } else {
+        document.getElementById('mission-b-status').textContent = '목표 구역 이탈 · 다시 파지해 이동하세요';
+        logMission('픽앤플레이스', false, 0, `드롭존 이탈 (오차 ${dropDist.toFixed(1)})`);
+    }
+}
+
+// IK 도달 가능성 공식(§6 solveIK)으로 사전 검증해서 안전하게 도달 가능한 좌표만 반환
+function randomReachablePoint() {
+    for (let attempt = 0; attempt < 40; attempt++) {
+        const angleDeg = -150 + Math.random() * 300;
+        const radius = 12 + Math.random() * 30;
+        const x = radius * Math.cos(angleDeg * DEG);
+        const z = -radius * Math.sin(angleDeg * DEG);
+        if (solveIK(x, WORKPIECE_REST_Y, z).ok) {
+            return { x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 };
+        }
+    }
+    return { x: 20, z: 15 }; // 극히 드문 실패 시 안전한 기본값
+}
+
+function randomizeMissionBPositions() {
+    let wpPoint, dzPoint, tries = 0;
+    do {
+        wpPoint = randomReachablePoint();
+        dzPoint = randomReachablePoint();
+        tries++;
+    } while (Math.hypot(wpPoint.x - dzPoint.x, wpPoint.z - dzPoint.z) < 15 && tries < 20);
+
+    WORKPIECE_START.x = wpPoint.x;
+    WORKPIECE_START.z = wpPoint.z;
+    DROPZONE_POS.x = dzPoint.x;
+    DROPZONE_POS.z = dzPoint.z;
+    dropZoneMesh.position.set(DROPZONE_POS.x, 0.05, DROPZONE_POS.z);
+    resetMissionB();
+    document.getElementById('mission-b-status').textContent = '새 위치로 변경됨 · 대기 중';
+}
+
+function missionBTick() {
+    if (!workpiece || !tcpMarker || isWorkpieceFalling) return;
+    const tcpWorld = new THREE.Vector3();
+    tcpMarker.getWorldPosition(tcpWorld);
+
+    if (!heldObject) {
+        const workpieceWorld = new THREE.Vector3();
+        workpiece.getWorldPosition(workpieceWorld);
+        const dist = tcpWorld.distanceTo(workpieceWorld);
+        if (!gripperOpen && dist < GRAB_DIST) {
+            attachWorkpieceToGripper();
+            document.getElementById('mission-b-status').textContent = '파지됨 · 목표 구역으로 이동하세요';
+        }
+    } else if (heldObject && gripperOpen) {
+        releaseWorkpieceFromGripper();
+    }
+}
+
+// ── 수행 기록 로그 ──
+const missionLog = [];
+function logMission(name, pass, score, detail) {
+    const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+    const studentName = document.getElementById('student-name').value.trim() || '학번 미입력';
+    missionLog.unshift({ time, name, pass, score, detail, studentName });
+    renderMissionLog();
+}
+function renderMissionLog() {
+    const box = document.getElementById('mission-log');
+    if (missionLog.length === 0) {
+        box.innerHTML = '<span style="color:#4a7691;">아직 기록이 없습니다.</span>';
+        return;
+    }
+    box.innerHTML = missionLog.map(e => `
+        <div style="margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid var(--bp-line-dim);">
+            <span style="color:${e.pass ? 'var(--bp-cyan-bright)' : 'var(--bp-red)'};font-weight:700;">${e.pass ? 'PASS' : 'FAIL'}</span>
+            <span style="color:var(--bp-amber);"> ${e.score}점</span>
+            <span style="color:#5f93b3;"> · ${e.studentName} · ${e.name} · ${e.time}</span>
+        </div>`).join('');
+}
+function formatLogLine(e) {
+    return `${e.time} | ${e.studentName} | ${e.name} | ${e.pass ? 'PASS' : 'FAIL'} | ${e.score}점 | ${e.detail}`;
+}
+function copyMissionLog() {
+    const name = document.getElementById('student-name').value.trim() || '학번 미입력';
+    const lines = [
+        `[6축 로봇팔 수행활동 결과] 학번: ${name}`,
+        ...missionLog.slice().reverse().map(formatLogLine)
+    ];
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+        const btn = document.getElementById('btn-copy-log');
+        const orig = btn.textContent;
+        btn.textContent = '복사됨!';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+    });
+}
+
+// CSV 필드 이스케이프: 쉼표·따옴표·줄바꿈이 있으면 큰따옴표로 감싸고 내부 따옴표는 두 번 반복
+function csvField(value) {
+    const s = String(value ?? '');
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+
+function downloadResultsCsv() {
+    if (missionLog.length === 0) {
+        alert('다운로드할 수행 기록이 없습니다. 먼저 미션을 수행해 주세요.');
+        return;
+    }
+    const studentId = (document.getElementById('student-name').value.trim() || '학번미입력').replace(/[^0-9A-Za-z가-힣_-]/g, '');
+
+    const header = ['시각', '학번', '미션', '결과', '점수', '상세'];
+    const rows = missionLog.slice().reverse().map(e => [e.time, e.studentName, e.name, e.pass ? 'PASS' : 'FAIL', e.score, e.detail]);
+    const csvLines = [header, ...rows].map(row => row.map(csvField).join(','));
+    const csvContent = '\uFEFF' + csvLines.join('\r\n'); // BOM 포함: 엑셀에서 한글 깨짐 방지
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const filename = `로봇팔결과_${studentId}_${stamp}.csv`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ===================================================================
+// §4 동작 프로그래밍 (Teach & Playback)
+// ===================================================================
+const motionProgram = []; // {type:'move', angles:[]} | {type:'gripper', state:'open'|'close'} | {type:'wait', ms}
+let isPlayingProgram = false;
+
+function pause(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function recordCurrentPose() {
+    motionProgram.push({ type: 'move', angles: liveJointAngles.slice() });
+    renderProgram();
+}
+
+async function undoLastStep() {
+    if (isPlayingProgram || motionProgram.length === 0) return;
+    const removed = motionProgram.pop();
+    renderProgram();
+
+    if (removed.type === 'move') {
+        // 방금 제거한 동작 이전에 기록된 마지막 자세를 찾아 그리로 되돌아감 (없으면 초기 자세)
+        let prevAngles = JOINT_DEFS.map(def => def.home);
+        for (let i = motionProgram.length - 1; i >= 0; i--) {
+            if (motionProgram[i].type === 'move') { prevAngles = motionProgram[i].angles; break; }
+        }
+        await animateToPose(prevAngles, 500);
+    } else if (removed.type === 'gripper') {
+        let prevOpen = true;
+        for (let i = motionProgram.length - 1; i >= 0; i--) {
+            if (motionProgram[i].type === 'gripper') { prevOpen = motionProgram[i].state === 'open'; break; }
+        }
+        setGripper(prevOpen);
+    }
+    // wait 타입은 시각적으로 되돌릴 요소가 없어 목록 제거만 수행
+}
+
+function resetSimulationState() {
+    resetPose();
+    resetMissionB();
+}
+
+let codeSyntaxStyle = 'simple'; // 'simple' | 'doosan' | 'ur'
+
+function formatStepLabel(step) {
+    if (codeSyntaxStyle === 'doosan') {
+        if (step.type === 'move') {
+            const angles = JOINT_DEFS.map((def, j) => Math.round(step.angles[j])).join(', ');
+            return `movej(posj(${angles}), vel=60, acc=60)`;
+        }
+        if (step.type === 'gripper') return `set_digital_output(1, ${step.state === 'open' ? 'OFF' : 'ON'})`;
+        if (step.type === 'wait') return `wait(${(step.ms / 1000).toFixed(2).replace(/\.?0+$/, '') || '0'})`;
+        return '';
+    }
+    if (codeSyntaxStyle === 'ur') {
+        if (step.type === 'move') {
+            // UR은 관절각을 도(°)가 아니라 라디안(rad)으로 표기합니다.
+            const rads = JOINT_DEFS.map((def, j) => (step.angles[j] * DEG).toFixed(4)).join(', ');
+            return `movej([${rads}], a=1.4, v=1.0)`;
+        }
+        if (step.type === 'gripper') return `set_digital_out(0, ${step.state === 'open' ? 'False' : 'True'})`;
+        if (step.type === 'wait') return `sleep(${(step.ms / 1000).toFixed(2).replace(/\.?0+$/, '') || '0'})`;
+        return '';
+    }
+    if (step.type === 'move') {
+        const parts = JOINT_DEFS.map((def, j) => `${def.id}=${Math.round(step.angles[j])}`).join(', ');
+        return `MoveJ(${parts})`;
+    }
+    if (step.type === 'gripper') return `Gripper(${step.state === 'open' ? 'OPEN' : 'CLOSE'})`;
+    if (step.type === 'wait') return `Wait(${step.ms})`;
+    return '';
+}
+
+function renderProgram() {
+    const stepsBox = document.getElementById('program-steps');
+    if (motionProgram.length === 0) {
+        stepsBox.innerHTML = '<span style="color:#4a7691;">기록된 동작이 없습니다. "현재 자세 기록"으로 시작하세요.</span>';
+    } else {
+        stepsBox.innerHTML = motionProgram.map((step, i) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;">
+                <span>${String(i + 1).padStart(2, '0')}. ${formatStepLabel(step)}</span>
+                <span data-remove="${i}" style="color:var(--bp-red);cursor:pointer;padding-left:6px;">✕</span>
+            </div>`).join('');
+        stepsBox.querySelectorAll('[data-remove]').forEach(el => {
+            el.addEventListener('click', () => {
+                motionProgram.splice(parseInt(el.dataset.remove, 10), 1);
+                renderProgram();
+            });
+        });
+    }
+    document.getElementById('program-code').value = motionProgram.map(formatStepLabel).join('\n');
+}
+
+function animateToPose(targetAngles, durationMs = 900) {
+    return new Promise(resolve => {
+        const startAngles = liveJointAngles.slice();
+        const startTime = performance.now();
+        function step(now) {
+            const t = Math.min(1, (now - startTime) / durationMs);
+            JOINT_DEFS.forEach((def, i) => {
+                const val = startAngles[i] + (targetAngles[i] - startAngles[i]) * t;
+                liveJointAngles[i] = val;
+                const slider = document.getElementById(`joint-slider-${i}`);
+                slider.value = val;
+                document.getElementById(`joint-val-${i}`).textContent = Math.round(val);
+                applyJoint(i, val);
+                updateNeedle(document.getElementById(`joint-card-${i}`), def, val);
+            });
+            updateTcpReadout();
+            if (t < 1) requestAnimationFrame(step); else resolve();
+        }
+        requestAnimationFrame(step);
+    });
+}
+
+async function playProgram() {
+    if (isPlayingProgram || motionProgram.length === 0) return;
+    isPlayingProgram = true;
+    document.getElementById('status-text').textContent = 'PROGRAM RUNNING';
+    for (const step of motionProgram) {
+        if (step.type === 'move') await animateToPose(step.angles, 900);
+        else if (step.type === 'gripper') { setGripper(step.state === 'open'); await pause(400); }
+        else if (step.type === 'wait') await pause(step.ms);
+    }
+    isPlayingProgram = false;
+    document.getElementById('status-text').textContent = 'READY';
+}
+
+function copyProgramCode() {
+    const code = document.getElementById('program-code').value;
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.getElementById('btn-copy-program');
+        const orig = btn.textContent;
+        btn.textContent = '복사됨!';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+    });
+}
+
+// ===================================================================
+// §5 코드 입력 실행 (Code → Simulation)
+// ===================================================================
+function parseProgramCode(text) {
+    const lines = text.split('\n').map(l => l.trim());
+    const steps = [];
+    const errors = [];
+
+    lines.forEach((line, idx) => {
+        const lineNo = idx + 1;
+        if (line === '' || line.startsWith('#') || line.startsWith('//')) return;
+
+        let m = line.match(/^MoveJ\((.*)\)$/i);
+        if (m) {
+            const pairs = m[1].split(',').map(s => s.trim()).filter(Boolean);
+            const angleMap = {};
+            let badPair = null;
+            pairs.forEach(pair => {
+                const kv = pair.split('=').map(s => s.trim());
+                const val = parseFloat(kv[1]);
+                if (kv.length !== 2 || Number.isNaN(val)) { badPair = pair; return; }
+                angleMap[kv[0].toUpperCase()] = val;
+            });
+            if (badPair) { errors.push(`라인 ${lineNo}: "${badPair}" 값을 해석할 수 없습니다.`); return; }
+
+            const angles = [];
+            let problem = null;
+            JOINT_DEFS.forEach(def => {
+                if (!(def.id in angleMap)) { problem = `${def.id} 값이 없습니다`; return; }
+                const v = angleMap[def.id];
+                if (v < def.min || v > def.max) { problem = `${def.id} 값 ${v}°가 허용범위(${def.min}~${def.max}°)를 벗어났습니다`; return; }
+                angles.push(v);
+            });
+            if (problem) { errors.push(`라인 ${lineNo}: ${problem} — "${line}"`); return; }
+
+            steps.push({ type: 'move', angles });
+            return;
+        }
+
+        m = line.match(/^Gripper\((OPEN|CLOSE)\)$/i);
+        if (m) { steps.push({ type: 'gripper', state: m[1].toLowerCase() }); return; }
+
+        m = line.match(/^Wait\((\d+)\)$/i);
+        if (m) { steps.push({ type: 'wait', ms: parseInt(m[1], 10) }); return; }
+
+        // ── UR(URScript) 스타일: movej([q], a=, v=) — 관절각은 라디안 ──
+        if (/^movej\s*\(\s*\[/i.test(line)) {
+            const arrMatch = line.match(/\[([^\]]*)\]/);
+            if (!arrMatch) { errors.push(`라인 ${lineNo}: movej([...])의 대괄호를 찾지 못했습니다 — "${line}"`); return; }
+            const radians = arrMatch[1].split(',').map(s => parseFloat(s.trim()));
+            if (radians.length !== 6 || radians.some(n => Number.isNaN(n))) {
+                errors.push(`라인 ${lineNo}: movej([...])에는 관절 6개 값(라디안)이 필요합니다 — "${line}"`);
+                return;
+            }
+            const nums = radians.map(r => r / DEG); // 라디안 → 도
+            let problem = null;
+            JOINT_DEFS.forEach((def, i) => {
+                if (nums[i] < def.min || nums[i] > def.max) {
+                    problem = `${def.id} 값 ${nums[i].toFixed(1)}°가 허용범위(${def.min}~${def.max}°)를 벗어났습니다`;
+                }
+            });
+            if (problem) { errors.push(`라인 ${lineNo}: ${problem} — "${line}"`); return; }
+            steps.push({ type: 'move', angles: nums });
+            return;
+        }
+
+        m = line.match(/^set_digital_out\(\s*\d+\s*,\s*(True|False)\s*\)$/i);
+        if (m) { steps.push({ type: 'gripper', state: m[1].toLowerCase() === 'true' ? 'close' : 'open' }); return; }
+
+        m = line.match(/^sleep\(([\d.]+)\)$/i);
+        if (m) { steps.push({ type: 'wait', ms: Math.round(parseFloat(m[1]) * 1000) }); return; }
+
+        // ── 두산 DRL 스타일 ──
+        if (/^movej\s*\(/i.test(line)) {
+            const posjMatch = line.match(/posj\(([^)]*)\)/i);
+            if (!posjMatch) { errors.push(`라인 ${lineNo}: movej()에서 posj(...)를 찾지 못했습니다 — "${line}"`); return; }
+            const nums = posjMatch[1].split(',').map(s => parseFloat(s.trim()));
+            if (nums.length !== 6 || nums.some(n => Number.isNaN(n))) {
+                errors.push(`라인 ${lineNo}: posj()에는 관절 6개 값이 필요합니다 — "${line}"`);
+                return;
+            }
+            let problem = null;
+            JOINT_DEFS.forEach((def, i) => {
+                if (nums[i] < def.min || nums[i] > def.max) {
+                    problem = `${def.id} 값 ${nums[i]}°가 허용범위(${def.min}~${def.max}°)를 벗어났습니다`;
+                }
+            });
+            if (problem) { errors.push(`라인 ${lineNo}: ${problem} — "${line}"`); return; }
+            steps.push({ type: 'move', angles: nums });
+            return;
+        }
+
+        m = line.match(/^set_digital_output\(\s*\d+\s*,\s*(ON|OFF)\s*\)$/i);
+        if (m) { steps.push({ type: 'gripper', state: m[1].toUpperCase() === 'ON' ? 'close' : 'open' }); return; }
+
+        m = line.match(/^wait\(([\d.]+)\)$/i);
+        if (m) { steps.push({ type: 'wait', ms: Math.round(parseFloat(m[1]) * 1000) }); return; }
+
+        errors.push(`라인 ${lineNo}: 인식할 수 없는 명령입니다 — "${line}"`);
+    });
+
+    return { steps, errors };
+}
+
+function loadProgramFromInput(autoPlay) {
+    const statusEl = document.getElementById('code-input-status');
+    if (isPlayingProgram) {
+        statusEl.style.color = 'var(--bp-red)';
+        statusEl.textContent = '재생 중에는 코드를 불러올 수 없습니다.';
+        return;
+    }
+    const text = document.getElementById('code-input').value;
+    const { steps, errors } = parseProgramCode(text);
+
+    if (errors.length > 0) {
+        statusEl.style.color = 'var(--bp-red)';
+        statusEl.innerHTML = errors.map(e => `⚠ ${e}`).join('<br>');
+        return;
+    }
+    if (steps.length === 0) {
+        statusEl.style.color = 'var(--bp-red)';
+        statusEl.textContent = '실행할 명령이 없습니다. MoveJ / Gripper / Wait 형식으로 입력해 주세요.';
+        return;
+    }
+
+    motionProgram.length = 0;
+    steps.forEach(s => motionProgram.push(s));
+    renderProgram();
+    statusEl.style.color = 'var(--bp-cyan-bright)';
+    statusEl.textContent = `✔ ${steps.length}개 명령을 프로그램에 불러왔습니다.`;
+
+    if (autoPlay) playProgram();
+}
+
+// ===================================================================
+// §6 역기구학 (Inverse Kinematics) — 위치 전용, 손목 고정(J4~J6=0)
+// 2링크 평면 IK(코사인 법칙) + 베이스 방위각. Node에서 FK(IK(x))=x 수치 검증 완료.
+// ===================================================================
+const IK_L1 = LINK.upperArm;
+const IK_L2 = LINK.forearm + LINK.wristLink1 + LINK.wristLink2 + LINK.toolLength + 3.2;
+const IK_SHOULDER_Y = LINK.baseHeight + LINK.shoulderOffset + 3;
+
+function solveIK(targetX, targetY, targetZ) {
+    const r = Math.hypot(targetX, targetZ);
+    const h = targetY - IK_SHOULDER_Y;
+    const d = Math.hypot(r, h);
+
+    if (d > IK_L1 + IK_L2) {
+        return { ok: false, reason: `목표가 최대 작업반경(${(IK_L1 + IK_L2).toFixed(1)})을 벗어났습니다. (거리 ${d.toFixed(1)})` };
+    }
+    if (d < Math.abs(IK_L1 - IK_L2)) {
+        return { ok: false, reason: `목표가 너무 가깝습니다. 최소 도달거리 ${Math.abs(IK_L1 - IK_L2).toFixed(1)} 필요. (거리 ${d.toFixed(1)})` };
+    }
+
+    const a1 = r < 0.01 ? 0 : Math.atan2(-targetZ, targetX) / DEG;
+    const d1 = JOINT_DEFS[0];
+    if (a1 < d1.min || a1 > d1.max) {
+        return { ok: false, reason: `베이스 회전각(J1=${a1.toFixed(1)}°)이 가동범위(${d1.min}~${d1.max}°)를 벗어났습니다.` };
+    }
+
+    const cosDelta = Math.max(-1, Math.min(1, (d * d - IK_L1 * IK_L1 - IK_L2 * IK_L2) / (2 * IK_L1 * IK_L2)));
+    for (const sign of [-1, 1]) {
+        const delta = sign * Math.acos(cosDelta);
+        const phi = Math.atan2(-r, h) - Math.atan2(IK_L2 * Math.sin(delta), IK_L1 + IK_L2 * Math.cos(delta));
+        const a2 = phi / DEG;
+        const a3 = delta / DEG;
+        const d2 = JOINT_DEFS[1], d3 = JOINT_DEFS[2];
+        if (a2 >= d2.min && a2 <= d2.max && a3 >= d3.min && a3 <= d3.max) {
+            return { ok: true, angles: [a1, a2, a3, 0, 0, 0] };
+        }
+    }
+    return { ok: false, reason: '위치에는 도달 가능하지만, 손목을 고정(0°)한 상태에서는 어깨/팔꿈치 가동범위를 벗어납니다.' };
+}
+
+async function runIK() {
+    const x = parseFloat(document.getElementById('ik-x').value) || 0;
+    const y = parseFloat(document.getElementById('ik-y').value) || 0;
+    const z = parseFloat(document.getElementById('ik-z').value) || 0;
+    const statusEl = document.getElementById('ik-status');
+
+    const result = solveIK(x, y, z);
+    if (!result.ok) {
+        statusEl.style.color = 'var(--bp-red)';
+        statusEl.textContent = `⚠ ${result.reason}`;
+        return;
+    }
+    statusEl.style.color = 'var(--bp-cyan-bright)';
+    statusEl.textContent = `✔ J1=${result.angles[0].toFixed(1)}° J2=${result.angles[1].toFixed(1)}° J3=${result.angles[2].toFixed(1)}°로 이동합니다. (손목 J4~J6은 0°로 고정)`;
+    await animateToPose(result.angles, 900);
+}
+
+// ── 좌표 파악 도구: 버튼으로 불러오기 + 바닥 클릭으로 읽기 ──
+function pullCoordsToIK(x, y, z) {
+    document.getElementById('ik-x').value = x.toFixed(1);
+    document.getElementById('ik-y').value = y.toFixed(1);
+    document.getElementById('ik-z').value = z.toFixed(1);
+    const statusEl = document.getElementById('ik-status');
+    statusEl.style.color = 'var(--bp-cyan-bright)';
+    statusEl.textContent = `좌표 (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})를 불러왔습니다. "IK 계산 후 이동"을 눌러 확인하세요.`;
+}
+
+let pickMarker = null;
+const raycaster = new THREE.Raycaster();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // world Y=0 바닥면
+const pointerNDC = new THREE.Vector2();
+const pickPoint = new THREE.Vector3();
+
+function getGroundPoint(clientX, clientY) {
+    const rect = labelRenderer.domElement.getBoundingClientRect();
+    pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointerNDC, camera);
+    return raycaster.ray.intersectPlane(groundPlane, pickPoint); // null 또는 pickPoint 반환
+}
+
+function initFloorPicking() {
+    pickMarker = new THREE.Mesh(
+        new THREE.RingGeometry(1.0, 1.4, 24),
+        new THREE.MeshBasicMaterial({ color: BP_AMBER, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+    );
+    pickMarker.rotation.x = -Math.PI / 2;
+    pickMarker.visible = false;
+    scene.add(pickMarker);
+
+    // 주의: 라벨(CSS2D) 레이어가 화면 전체를 덮고 있어, 클릭 감지는 캔버스가 아니라
+    // 실제로 마우스 이벤트를 받는 labelRenderer.domElement에 걸어야 동작합니다.
+    const dom = labelRenderer.domElement;
+    let downPos = null;
+    const hud = document.getElementById('floor-coord-hud');
+
+    dom.addEventListener('pointerdown', (e) => { downPos = { x: e.clientX, y: e.clientY }; });
+
+    dom.addEventListener('pointermove', (e) => {
+        const hit = getGroundPoint(e.clientX, e.clientY);
+        if (hit) {
+            hud.textContent = `바닥 좌표 X:${pickPoint.x.toFixed(1)}  Z:${pickPoint.z.toFixed(1)}  · 클릭하면 IK X/Z에 채워짐 (Y는 직접 입력)`;
+        } else {
+            hud.textContent = '바닥 위에 마우스를 올리면 좌표가 표시됩니다 · 클릭하면 IK 입력창에 채워집니다';
+        }
+    });
+
+    dom.addEventListener('pointerup', (e) => {
+        if (!downPos) return;
+        const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+        downPos = null;
+        if (moved > 5) return; // 화면 회전을 위한 드래그는 클릭으로 취급하지 않음
+
+        const hit = getGroundPoint(e.clientX, e.clientY);
+        if (!hit) return;
+
+        document.getElementById('ik-x').value = pickPoint.x.toFixed(1);
+        document.getElementById('ik-z').value = pickPoint.z.toFixed(1);
+
+        pickMarker.position.set(pickPoint.x, 0.06, pickPoint.z);
+        pickMarker.visible = true;
+
+        const statusEl = document.getElementById('ik-status');
+        statusEl.style.color = 'var(--bp-cyan-bright)';
+        statusEl.textContent = `바닥 클릭 지점 X:${pickPoint.x.toFixed(1)}, Z:${pickPoint.z.toFixed(1)}를 IK에 채웠습니다. Y(높이)를 입력하고 "IK 계산 후 이동"을 눌러 주세요.`;
+    });
+}
+
+// ── 플로팅 컨트롤러: 헤더 드래그로 이동, 버튼으로 접기/펴기 ──
+function initFloatingController() {
+    const panel = document.getElementById('floating-controller');
+    const header = document.getElementById('floating-controller-header');
+    const collapseBtn = document.getElementById('btn-controller-collapse');
+    const viewport = document.getElementById('viewport');
+
+    // absolute(top/right) 배치를 드래그 가능한 top/left 좌표로 전환
+    function lockToTopLeft() {
+        const panelRect = panel.getBoundingClientRect();
+        const viewportRect = viewport.getBoundingClientRect();
+        panel.style.left = `${panelRect.left - viewportRect.left}px`;
+        panel.style.top = `${panelRect.top - viewportRect.top}px`;
+        panel.style.right = 'auto';
+    }
+
+    let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+    header.addEventListener('pointerdown', (e) => {
+        if (e.target === collapseBtn) return;
+        lockToTopLeft();
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startLeft = parseFloat(panel.style.left);
+        startTop = parseFloat(panel.style.top);
+        header.setPointerCapture(e.pointerId);
+    });
+
+    header.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const viewportRect = viewport.getBoundingClientRect();
+        let newLeft = startLeft + (e.clientX - startX);
+        let newTop = startTop + (e.clientY - startY);
+        const maxLeft = viewportRect.width - panel.offsetWidth;
+        const maxTop = viewportRect.height - 40; // 헤더가 최소한 보이도록
+        newLeft = Math.max(0, Math.min(maxLeft, newLeft));
+        newTop = Math.max(0, Math.min(maxTop, newTop));
+        panel.style.left = `${newLeft}px`;
+        panel.style.top = `${newTop}px`;
+    });
+
+    header.addEventListener('pointerup', (e) => {
+        dragging = false;
+        try { header.releasePointerCapture(e.pointerId); } catch (err) { /* no-op */ }
+    });
+
+    collapseBtn.addEventListener('click', () => {
+        panel.classList.toggle('collapsed');
+    });
+}
+
+// ── 지면 간섭(충돌) 감지: 관절 중심선 기준 근사 판정 ──
+function initCollisionMarker() {
+    collisionMarker = new THREE.Mesh(
+        new THREE.CircleGeometry(4.5, 32),
+        new THREE.MeshBasicMaterial({ color: BP_RED, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+    );
+    collisionMarker.rotation.x = -Math.PI / 2;
+    collisionMarker.visible = false;
+    scene.add(collisionMarker);
+}
+
+function setCollisionVisual(active) {
+    robotLinkMaterials.forEach(m => {
+        if (active) {
+            m.solidMat.color.setHex(BP_RED);
+            m.lineMat.color.setHex(BP_RED);
+        } else {
+            m.solidMat.color.setHex(m.baseColor);
+            m.lineMat.color.setHex(m.baseLineColor);
+        }
+    });
+    document.getElementById('collision-warning').classList.toggle('active', active);
+    if (!active) collisionMarker.visible = false;
+}
+
+function checkGroundCollision() {
+    if (!tcpMarker || jointGroups.length === 0) return;
+
+    const wp = new THREE.Vector3();
+    let minY = Infinity, minX = 0, minZ = 0;
+
+    jointGroups.forEach(g => {
+        g.getWorldPosition(wp);
+        if (wp.y < minY) { minY = wp.y; minX = wp.x; minZ = wp.z; }
+    });
+    tcpMarker.getWorldPosition(wp);
+    if (wp.y < minY) { minY = wp.y; minX = wp.x; minZ = wp.z; }
+
+    if (workpiece) {
+        workpiece.getWorldPosition(wp);
+        if (wp.y < minY) { minY = wp.y; minX = wp.x; minZ = wp.z; }
+    }
+
+    const active = minY < GROUND_COLLISION_THRESHOLD;
+    if (active !== groundCollisionActive) {
+        groundCollisionActive = active;
+        setCollisionVisual(active);
+    }
+    if (active) {
+        collisionMarker.position.set(minX, 0.07, minZ);
+        collisionMarker.visible = true;
+    }
+}
+
+// ── 좌표 측정 구체 (Coordinate Probe): 3D 공간 어디든 드래그해 좌표를 확인 ──
+let probeMesh = null;
+function initCoordinateProbe() {
+    const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(1.1, 20, 20),
+        new THREE.MeshStandardMaterial({ color: BP_PROBE, emissive: 0x0b4d28, emissiveIntensity: 0.6 })
+    );
+    sphere.position.set(18, 15, 12);
+
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(1.6, 1.9, 24),
+        new THREE.MeshBasicMaterial({ color: BP_PROBE, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    sphere.add(ring);
+
+    const div = document.createElement('div');
+    div.className = 'probe-label';
+    const label = new CSS2DObject(div);
+    label.position.set(0, 2.2, 0);
+    sphere.add(label);
+
+    scene.add(sphere);
+    probeMesh = sphere;
+    updateProbeReadout();
+
+    // 카메라 시점과 수직인 평면 위에서 드래그되므로, 화면을 회전한 뒤 다시 드래그하면
+    // 공중의 임의 지점(바닥 클릭으로는 못 찍는 Y값)도 지정할 수 있습니다.
+    const probeDragControls = new DragControls([sphere], camera, labelRenderer.domElement);
+    probeDragControls.addEventListener('dragstart', () => { orbitControls.enabled = false; });
+    probeDragControls.addEventListener('drag', updateProbeReadout);
+    probeDragControls.addEventListener('dragend', () => { orbitControls.enabled = true; updateProbeReadout(); });
+}
+
+function updateProbeReadout() {
+    if (!probeMesh) return;
+    const p = probeMesh.position;
+    document.getElementById('probe-x').textContent = p.x.toFixed(1);
+    document.getElementById('probe-y').textContent = p.y.toFixed(1);
+    document.getElementById('probe-z').textContent = p.z.toFixed(1);
+    const label = probeMesh.children.find(c => c instanceof CSS2DObject);
+    if (label) label.element.textContent = `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`;
+}
+
+init();
+</script>
+</body>
+</html>

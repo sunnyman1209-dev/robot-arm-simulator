@@ -1,0 +1,4 @@
+# 배포에서 제외 (공개 사이트에 올라가면 안 되는 것)
+_ref_june_evidence/
+.cursor-delegate/
+AGENTS.md
